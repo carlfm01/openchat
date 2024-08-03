@@ -159,7 +159,11 @@ class UnpaddedMistralAttention(nn.Module):
         self.k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False)
         self.v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=False)
         self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=False)
-
+        
+        # Check sliding window size is positive integer otherwise set to none
+        if self.sliding_window <= 0:
+            self.sliding_window = None
+        
     def forward(
         self,
         cos_sin: Tuple[torch.Tensor, torch.Tensor],
@@ -181,14 +185,22 @@ class UnpaddedMistralAttention(nn.Module):
         cos, sin = cos_sin
         query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin, nz_position_ids)
 
-        # flash attn
-        attn_output = flash_attn_varlen_func(
-            q=query_states, k=key_states, v=value_states,
-            cu_seqlens_q=cu_seqlens, cu_seqlens_k=cu_seqlens,
-            max_seqlen_q=max_seqlen, max_seqlen_k=max_seqlen,
-
-            dropout_p=0.0, causal=True,
-            window_size=(self.sliding_window, self.sliding_window))
+        # check if sliding window is not none
+        if self.sliding_window is not None:
+            # flash attn
+            attn_output = flash_attn_varlen_func(
+                q=query_states, k=key_states, v=value_states,
+                cu_seqlens_q=cu_seqlens, cu_seqlens_k=cu_seqlens,
+                max_seqlen_q=max_seqlen, max_seqlen_k=max_seqlen,
+                dropout_p=0.0, causal=True,
+                window_size=(self.sliding_window, self.sliding_window))
+        else:
+            # flash attn
+            attn_output = flash_attn_varlen_func(
+                q=query_states, k=key_states, v=value_states,
+                cu_seqlens_q=cu_seqlens, cu_seqlens_k=cu_seqlens,
+                max_seqlen_q=max_seqlen, max_seqlen_k=max_seqlen,
+                dropout_p=0.0, causal=True)
 
         # attn_output: [total_nnz, num_heads, head_dim]
         attn_output = attn_output.view(-1, self.hidden_size)  # type: ignore
