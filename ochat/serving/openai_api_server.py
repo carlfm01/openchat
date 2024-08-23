@@ -67,7 +67,7 @@ def log_request(created_time: int, request: openai_api_protocol.ChatCompletionRe
             time=created_time,
             request=request,
             outputs=[o.text for o in output.outputs]
-        ).model_dump_json(exclude_unset=True))
+        ).json(exclude_unset=True, ensure_ascii=False))
 
 
 def create_error_response(status_code: HTTPStatus,
@@ -177,7 +177,6 @@ async def create_chat_completion(raw_request: Request, background_tasks: Backgro
             temperature=request.temperature,
             top_p=request.top_p,
             max_tokens=request.max_tokens,
-            seed=request.seed,
             # Override stop tokens
             stop_token_ids=model.eot_tokens,
             ignore_eos=True
@@ -206,7 +205,7 @@ async def create_chat_completion(raw_request: Request, background_tasks: Backgro
             model=model_name,
         )
 
-        return response.model_dump_json(exclude_unset=True)
+        return response.json(exclude_unset=True, ensure_ascii=False)
 
     async def completion_stream_generator() -> AsyncGenerator[str, None]:
         # First chunk with role
@@ -220,7 +219,7 @@ async def create_chat_completion(raw_request: Request, background_tasks: Backgro
                                                                      choices=[choice_data],
                                                                      model=model_name)
 
-            yield f"data: {chunk.model_dump_json(exclude_unset=True)}\n\n"
+            yield f"data: {chunk.json(exclude_unset=True, ensure_ascii=False)}\n\n"
 
         previous_texts = [""] * request.n
         previous_num_tokens = [0] * request.n

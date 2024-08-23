@@ -7,7 +7,7 @@ from glob import glob
 import orjson
 import openai
 from tqdm import tqdm
-from openai import RateLimitError, InternalServerError, APIConnectionError
+from openai.error import RateLimitError, ServiceUnavailableError
 from tenacity import retry, stop_after_attempt, wait_random_exponential, retry_if_exception_type
 from vllm import LLM, SamplingParams
 
@@ -17,20 +17,12 @@ from ochat.evaluation.match_answer import MATCH_ANSWER_FUNCTION
 from ochat.config import MODEL_CONFIG_MAP
 
 
-def _strip_first_space(s: str):
-    if len(s) and s[0] == " ":
-        return s[1:]
-    return s
-
-
-@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(20), retry=retry_if_exception_type((RateLimitError, InternalServerError, APIConnectionError, )))
-async def _chat_completion_with_backoff(client, **kwargs):
-    return await client.chat.completions.create(**kwargs)
+@retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(20), retry=retry_if_exception_type((RateLimitError, ServiceUnavailableError, )))
+async def _chat_completion_with_backoff(**kwargs):
+    return await openai.ChatCompletion.acreate(**kwargs)
 
 
 async def chat_completion_thread(model, progress_bar, queue):
-    client = openai.AsyncOpenAI()
-
     while True:
         # Fetch task
         try:
@@ -41,13 +33,12 @@ async def chat_completion_thread(model, progress_bar, queue):
         # Completion
         try:
             response = await _chat_completion_with_backoff(
-                client,
                 model=model,
                 messages=[{"role": "user", "content": task["question"]}],
 
                 temperature=0
             )
-            task["response"] = response.choices[0].message.content  # type: ignore
+            task["response"] = response["choices"][0]["message"]["content"]  # type: ignore
         except Exception as e:
             if hasattr(e, "last_attempt"):
                 e = e.last_attempt
@@ -131,8 +122,7 @@ def get_model_answers(
     questions: list,
     condition: str,
     system_msg: str,
-    model_type: str,
-    tensor_parallel_size: int
+    model_type: str
 ):
     # Load model config
     if model_type is None:
@@ -146,10 +136,9 @@ def get_model_answers(
     # Init vLLM engine
     engine = LLM(model,
                  max_num_batched_tokens=model_config.model_max_context,
-                 max_model_len=model_config.model_max_context,
-                 tensor_parallel_size=tensor_parallel_size)
+                 max_model_len=model_config.model_max_context)
     sampling_params = SamplingParams(temperature=0,
-                                     max_tokens=None,
+                                     max_tokens=model_config.model_max_context,
                                      stop_token_ids=conv_template.eot_tokens_,  # Override stop tokens
                                      ignore_eos=True)
 
@@ -160,7 +149,8 @@ def get_model_answers(
     # calculate & fill in responses
     responses = engine.generate(prompt_token_ids=prompts, sampling_params=sampling_params)
     for idx, resp in zip(prompt_indices, responses):
-        questions[idx]["response"] = _strip_first_space(resp.outputs[0].text)
+        questions[idx]["response"] = resp.outputs[0].text
+
 
     return questions
 
@@ -177,8 +167,7 @@ async def run_eval(
     continue_from: Optional[str],
     output_file: str,
 
-    parallel: int,
-    tensor_parallel_size: int
+    parallel: int
 ):
     print (f"Evaluating ({model_type})...\n\nCondition: {condition}\nSystem Prompt: {system_msg}\n")
 
@@ -212,7 +201,7 @@ async def run_eval(
     if model.startswith("gpt-3.5-turbo") or model.startswith("gpt-4"):
         questions = await get_openai_answers(model, questions, parallel)
     else:
-        questions = get_model_answers(model, questions, condition, system_msg, model_type, tensor_parallel_size)
+        questions = get_model_answers(model, questions, condition, system_msg, model_type)
 
     # Calculate accuracy
     for q in questions:
@@ -240,13 +229,12 @@ async def main():
     parser.add_argument("--system-msg", type=str, default="")
     parser.add_argument("--model-type", type=str, default=None)
 
-    parser.add_argument("--data-path", type=str, default="ochat/evaluation/eval_data")
-    parser.add_argument("--eval-sets", type=str, nargs="+", default=[])
+    parser.add_argument("--data_path", type=str, default="ochat/evaluation/eval_data")
+    parser.add_argument("--eval_sets", type=str, nargs="+", default=[])
 
-    parser.add_argument("--continue-from", type=str, default=None)
-    parser.add_argument("--output-file",   type=str, default=None)
+    parser.add_argument("--continue_from", type=str, default=None)
+    parser.add_argument("--output_file",   type=str, default=None)
     parser.add_argument("--parallel",      type=int, default=16)
-    parser.add_argument("--tensor-parallel-size", type=int, default=1)
 
     args = parser.parse_args()
 

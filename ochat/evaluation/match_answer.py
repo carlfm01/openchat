@@ -26,7 +26,7 @@ def zs_bbh_mc_orca_truthfulqa_orca_match_answer(task_data, response):
     return False, ""
 
 
-def fs_cothub_math_match_answer(task_data, response, max_length=256):
+def zs_math_match_answer(task_data, response):
     def _last_boxed_only_string(string):
         idx = string.rfind("\\boxed")
         if idx < 0:
@@ -61,38 +61,29 @@ def fs_cothub_math_match_answer(task_data, response, max_length=256):
     assert ground_truth_answer
 
     # Match model answer
+    response = response.strip()
+
+    # Find answer is
     is_matched = False
 
-    ans_line = response.split('The answer is')
-    if len(ans_line) > 1:
+    ans_marker = 'answer is'
+    ans_idx = response.lower().rfind(ans_marker)
+    if ans_idx != -1:
         is_matched = True
-        response = ans_line[-1].strip()
-    else:
-        ans_extracted = _last_boxed_only_string(response)
-        if ans_extracted:
-            is_matched = True
-            response = ans_extracted
+        response = response[ans_idx + len(ans_marker):].strip()
+        if response.startswith(":"):
+            response = response[1:]
+        if response.endswith("."):
+            response = response[:-1]
+
+    # Find boxed
+    ans_boxed = _last_boxed_only_string(response)
+    if ans_boxed:
+        is_matched = True
+        response = ans_boxed
 
     # Grade
-    response = response[:max_length]  # To avoid sympy taking too long
     return is_matched, grade_answer(response, ground_truth_answer)
-
-
-def zs_gpqa_match_answer(task_data, response):
-    # Expected to see answer field, otherwise return C.
-    ans = response.split("The correct answer is")
-
-    if len(ans) == 1:
-        return False, "C"
-
-    ans = ans[1]
-
-    letter_set = {"A", "B", "C", "D"} 
-    for c in ans:
-        if c in letter_set:
-            return True, c
-
-    return False, "C"
 
 
 def fs_cothub_bbh_match_answer(task_data, response):
@@ -118,7 +109,7 @@ def fs_cothub_bbh_match_answer(task_data, response):
         return False, ans
     else:
         # Free form, direct return
-        if len(ans) and ans[-1] == '.':
+        if ans[-1] == '.':
             ans = ans[:-1]
 
         return True, ans
@@ -164,11 +155,12 @@ def coding_humaneval_match_answer(task_data, response):
         return False
 
     def _try_match(content, prefix, entrypoint):
-        # All markdown code blocks, as well as raw
-        code_blocks = [m[1] for m in re.findall(r"(\`{3}.*?\n+)([\s\S]*?)(\n+\`{3})", content)] \
-                    + [content]
+        for block in content.split("```"):
+            # Sanitize block
+            block = block.strip()
+            if block.startswith("python"):
+                block = block[len("python"):]
 
-        for block in code_blocks:
             # Check syntax
             try:
                 code_completion = prefix + block
@@ -197,12 +189,11 @@ MATCH_ANSWER_FUNCTION = {
     "zs/agieval": zs_agieval_match_answer,
     "zs/bbh_mc_orca": zs_bbh_mc_orca_truthfulqa_orca_match_answer,
     "zs/truthfulqa_orca": zs_bbh_mc_orca_truthfulqa_orca_match_answer,
-    "zs/gpqa": zs_gpqa_match_answer,
+    "zs/math": zs_math_match_answer,
 
     "fs_cothub/bbh": fs_cothub_bbh_match_answer,
     "fs_cothub/gsm8k": fs_cothub_gsm8k_match_answer,
     "fs_cothub/mmlu": fs_cothub_mmlu_match_answer,
-    "fs_cothub/math": fs_cothub_math_match_answer,
 
     "coding/humaneval": coding_humaneval_match_answer
 }
