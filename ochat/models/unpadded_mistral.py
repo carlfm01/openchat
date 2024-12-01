@@ -374,7 +374,7 @@ class UnpaddedMistralModel(UnpaddedMistralPreTrainedModel):
                 attn_factor=1,  # Adjust if needed
                 beta_fast=32,  # Adjust if needed
                 beta_slow=2,  # Adjust if needed
-                finetuned=True #config.rope_scaling["finetuned"]
+                finetuned=False #config.rope_scaling["finetuned"]
             )
         else:
             # Default to regular rotary embedding
