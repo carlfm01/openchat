@@ -24,7 +24,7 @@ dependencies = [
     "numba", 
     "datasets", 
     "orjson", 
-    "torch==2.1.2", 
+    "torch==2.1.1", 
     "packaging",
     "ninja",
     "flash-attn",
