@@ -15,7 +15,8 @@ classifiers = [
 dependencies = [
     "beautifulsoup4", 
     "markdownify", 
-    "openai", 
+    "pylatexenc",
+    "openai",
     "tenacity", 
     "tiktoken", 
     "tqdm", 
@@ -23,17 +24,20 @@ dependencies = [
     "numba", 
     "datasets", 
     "orjson", 
-    "torch", 
+    "torch==2.1.2", 
+    "packaging",
+    "ninja",
+    "flash-attn",
     "ray", 
     "sentencepiece", 
-    "transformers==4.36.2", 
+    "transformers==4.40.0", 
     "accelerate", 
     "protobuf",
     "fastapi", 
     "pydantic", 
     "shortuuid", 
     "uvicorn", 
-    "vllm",
+    "vllm==0.4.0.post1",
     "pytest"
 ]
 
